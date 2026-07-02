@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useCustomer } from '../context/CustomerContext'
-import { createQuotation, updateQuotation } from '../utils/FirebaseDataUtils'
+import { createQuotation, updateQuotation, updateQuotationStatus } from '../utils/FirebaseDataUtils'
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore'
 import { db } from '../firebaseConfig'
 import PDFGenerator from '../utils/PDFGenerator'
@@ -11,7 +11,7 @@ const fmtCurrency = (amount) =>
   new Intl.NumberFormat('ms-MY', { style: 'currency', currency: 'MYR' }).format(amount || 0)
 const fmtDate = (date) => (date ? new Date(date).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }) : '—')
 
-function QuotationCreation({ setActiveSection }) {
+function QuotationCreation({ setActiveSection, intent, clearIntent, openInvoice }) {
   const [viewMode, setViewMode] = useState('list') // 'list' or 'form'
   const [isEditing, setIsEditing] = useState(false)
   const [editingId, setEditingId] = useState(null)
@@ -41,6 +41,34 @@ function QuotationCreation({ setActiveSection }) {
   const [isSaving, setIsSaving] = useState(false)
 
   const { customers = [] } = useCustomer() || {}
+
+  // Track the last nav-intent nonce we've handled so we only act once per request.
+  const lastHandledNonce = useRef(0)
+
+  // Consume a navigation intent to start a NEW quotation prefilled from another screen.
+  useEffect(() => {
+    if (!intent || intent.view !== 'form') return
+    if (intent.nonce === lastHandledNonce.current) return
+    lastHandledNonce.current = intent.nonce
+
+    // Fresh form (inlined reset so we control customer/mode from the intent).
+    setManualParts([])
+    setLaborCharges([])
+    setWorkDescription('')
+    setVehicleInfo({ make: '', model: '', year: '', plate: '' })
+    setValidityDays(30)
+    setDiscount(0)
+    setNotes('')
+    setTerms('Quote valid for 30 days. Prices subject to change.')
+    setIsEditing(false)
+    setEditingId(null)
+
+    setDocumentMode(intent.mode === 'parts' ? 'parts' : 'repair')
+    setSelectedCustomer(intent.customer || null)
+    setViewMode('form')
+
+    clearIntent && clearIntent()
+  }, [intent]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load quotation history
   useEffect(() => {
@@ -188,15 +216,8 @@ function QuotationCreation({ setActiveSection }) {
   }
 
   const handleSaveQuotation = async () => {
-    if (!selectedCustomer) {
-      alert('Please select a customer')
-      return
-    }
-
-    if (manualParts.length === 0 && laborCharges.length === 0) {
-      alert('Please add at least one part or labor charge')
-      return
-    }
+    // Save is gated by the disabled button + inline reason (canSave). Guard defensively.
+    if (!canSave) return
 
     setIsSaving(true)
 
@@ -277,6 +298,45 @@ function QuotationCreation({ setActiveSection }) {
     setShowViewQuotationModal(true)
   }
 
+  // Update a quotation's status (Accept / Reject). Reflected by the status pills.
+  const setQuotationStatus = async (id, status) => {
+    if (!id || typeof updateQuotationStatus !== 'function') return
+    try {
+      await updateQuotationStatus(id, status)
+      // Keep an open view modal in sync with the new status.
+      setSelectedQuotationForView((prev) => (prev && prev.id === id ? { ...prev, status } : prev))
+    } catch (error) {
+      console.error('Error updating quotation status:', error)
+      alert('Could not update status: ' + error.message)
+    }
+  }
+
+  // Convert an existing quotation into an invoice: hand the source quote to the
+  // invoice builder (which prefills parts/labour/vehicle/discount from intent.quote).
+  const convertToInvoice = (quote) => {
+    if (!quote || typeof openInvoice !== 'function') return
+    openInvoice({
+      mode: quote.documentMode || 'repair',
+      customer: {
+        id: quote.customerId,
+        name: quote.customerName,
+        phone: quote.customerPhone || '',
+        email: quote.customerEmail || '',
+        ic: quote.customerIC || '',
+        address: quote.customerAddress || '',
+      },
+      quote,
+    })
+    // Optional: mark accepted on convert. Best-effort — never block the handoff.
+    if (quote.status === 'pending' && typeof updateQuotationStatus === 'function') {
+      updateQuotationStatus(quote.id, 'accepted').catch((e) => console.warn('Convert: status update skipped', e))
+    }
+    setShowViewQuotationModal(false)
+  }
+
+  // A quote can be converted while it's still actionable (pending or accepted).
+  const canConvert = (q) => q && (q.status === 'pending' || q.status === 'accepted') && typeof openInvoice === 'function'
+
   const selectCustomer = (customer) => {
     setSelectedCustomer(customer)
     setShowCustomerModal(false)
@@ -356,6 +416,16 @@ function QuotationCreation({ setActiveSection }) {
   const totals = calculateTotals()
   const isParts = documentMode === 'parts'
 
+  // Save gating: need a customer + at least one line item. Surface the reason inline
+  // instead of an alert at save time.
+  const hasItems = manualParts.length > 0 || laborCharges.length > 0
+  const canSave = !!selectedCustomer && hasItems
+  const saveReason = !selectedCustomer
+    ? 'Choose a customer to continue'
+    : !hasItems
+    ? 'Add at least one part or labour line'
+    : ''
+
   const statusPill = (status) => {
     switch (status) {
       case 'accepted':
@@ -400,9 +470,18 @@ function QuotationCreation({ setActiveSection }) {
       header: '',
       align: 'right',
       render: (q) => (
-        <div className="flex justify-end gap-2">
+        <div className="flex justify-end gap-1.5 flex-wrap">
           <button className="btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); openViewModal(q) }}>View</button>
           <button className="btn-secondary btn-sm" onClick={(e) => { e.stopPropagation(); handleEditButtonClick(q) }}>Edit</button>
+          {q.status === 'pending' && (
+            <>
+              <button className="btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); setQuotationStatus(q.id, 'accepted') }}>Accept</button>
+              <button className="btn-ghost btn-sm text-danger" onClick={(e) => { e.stopPropagation(); setQuotationStatus(q.id, 'rejected') }}>Reject</button>
+            </>
+          )}
+          {canConvert(q) && (
+            <button className="btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); convertToInvoice(q) }}>Convert to invoice</button>
+          )}
           <button className="btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); downloadPDF(q) }}>PDF</button>
         </div>
       ),
@@ -424,33 +503,44 @@ function QuotationCreation({ setActiveSection }) {
             ]}
           />
 
-          <div className="card">
-            <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between mb-4">
-              <h3 className="section-title">Recent quotations</h3>
-              <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-                <input
-                  className="input sm:w-64"
-                  placeholder="Search quotations…"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-                <select className="input select sm:w-40" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-                  <option value="all">All status</option>
-                  <option value="pending">Pending</option>
-                  <option value="accepted">Accepted</option>
-                  <option value="rejected">Rejected</option>
-                </select>
+          {!isLoadingQuotations && quotationHistory.length === 0 ? (
+            /* Dedicated empty state — no quotations exist yet. */
+            <div className="card">
+              <div className="card-flat text-center py-12 px-4">
+                <h3 className="section-title mb-1">No quotations yet</h3>
+                <p className="text-muted mb-5">Create your first quotation to send a customer a price for repairs or parts.</p>
+                <button className="btn-primary" onClick={handleCreateButtonClick}>New quotation</button>
               </div>
             </div>
+          ) : (
+            <div className="card">
+              <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between mb-4">
+                <h3 className="section-title">Recent quotations</h3>
+                <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                  <input
+                    className="input sm:w-64"
+                    placeholder="Search quotations…"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                  <select className="input select sm:w-40" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+                    <option value="all">All status</option>
+                    <option value="pending">Pending</option>
+                    <option value="accepted">Accepted</option>
+                    <option value="rejected">Rejected</option>
+                  </select>
+                </div>
+              </div>
 
-            <ResponsiveTable
-              columns={columns}
-              data={getFilteredQuotations()}
-              keyField="id"
-              loading={isLoadingQuotations}
-              emptyMessage={searchQuery || statusFilter !== 'all' ? 'No quotations match your filters.' : 'No quotations yet — create your first one.'}
-            />
-          </div>
+              <ResponsiveTable
+                columns={columns}
+                data={getFilteredQuotations()}
+                keyField="id"
+                loading={isLoadingQuotations}
+                emptyMessage={searchQuery || statusFilter !== 'all' ? 'No quotations match your filters.' : 'No quotations yet — create your first one.'}
+              />
+            </div>
+          )}
         </>
       )}
 
@@ -464,22 +554,10 @@ function QuotationCreation({ setActiveSection }) {
 
           <p className="form-note"><span className="req-star">*</span> Required before this quotation can be saved</p>
 
-          {/* Document mode toggle */}
-          <div className="card">
-            <div className="field-label">Document type</div>
-            <div className="segmented">
-              <button className={documentMode === 'repair' ? 'active' : ''} onClick={() => setDocumentMode('repair')}>Car Repair</button>
-              <button className={documentMode === 'parts' ? 'active' : ''} onClick={() => setDocumentMode('parts')}>Parts Sale</button>
-            </div>
-            <p className="field-hint">
-              {isParts ? 'Parts Sale hides vehicle and work-description fields.' : 'Car Repair includes vehicle details and work description.'}
-            </p>
-          </div>
-
-          {/* Customer */}
+          {/* Step 1 — Customer (gates the rest of the form) */}
           <div className="card">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="section-title req">Customer</h3>
+              <h3 className="section-title req">1 · Customer</h3>
               {selectedCustomer && (
                 <button onClick={() => setSelectedCustomer(null)} className="btn-ghost btn-sm">Change</button>
               )}
@@ -496,8 +574,24 @@ function QuotationCreation({ setActiveSection }) {
             )}
           </div>
 
+          {!selectedCustomer && (
+            <div className="card-flat text-center py-8 subtle">Choose a customer above to continue.</div>
+          )}
+
           {selectedCustomer && (
             <>
+              {/* Step 2 — Document type */}
+              <div className="card">
+                <div className="field-label">2 · Document type</div>
+                <div className="segmented">
+                  <button className={documentMode === 'repair' ? 'active' : ''} onClick={() => setDocumentMode('repair')}>Car Repair</button>
+                  <button className={documentMode === 'parts' ? 'active' : ''} onClick={() => setDocumentMode('parts')}>Parts Sale</button>
+                </div>
+                <p className="field-hint">
+                  {isParts ? 'Parts Sale hides vehicle and work-description fields.' : 'Car Repair includes vehicle details and work description.'}
+                </p>
+              </div>
+
               {/* Vehicle (repair only) */}
               {!isParts && (
                 <div className="card">
@@ -527,10 +621,10 @@ function QuotationCreation({ setActiveSection }) {
                 </div>
               )}
 
-              {/* Parts & Labor */}
+              {/* Step 3 — Parts & Labor */}
               <div className="card">
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="section-title req">Parts &amp; labor</h3>
+                  <h3 className="section-title req">3 · Parts &amp; labor</h3>
                   <div className="flex gap-2">
                     <button onClick={() => setShowPartPicker(true)} className="btn-secondary btn-sm">Add part</button>
                     <button onClick={addLaborCharge} className="btn-secondary btn-sm">Add labor</button>
@@ -595,9 +689,9 @@ function QuotationCreation({ setActiveSection }) {
                 </div>
               </div>
 
-              {/* Terms */}
+              {/* Step 4 — Validity & terms */}
               <div className="card">
-                <h3 className="section-title mb-3">Terms &amp; notes</h3>
+                <h3 className="section-title mb-3">4 · Validity &amp; terms</h3>
                 <div className="space-y-3">
                   <div>
                     <label className="field-label">Validity period (days)</label>
@@ -643,9 +737,10 @@ function QuotationCreation({ setActiveSection }) {
             <div className="flex-1 min-w-0">
               <div className="text-xs text-muted">Grand total</div>
               <div className="text-lg font-semibold text-ink nums">{fmtCurrency(totals.total)}</div>
+              {!canSave && <div className="text-xs text-danger">{saveReason}</div>}
             </div>
             <button onClick={() => setViewMode('list')} className="btn-ghost">Cancel</button>
-            <button onClick={handleSaveQuotation} disabled={isSaving || !selectedCustomer} className="btn-primary">
+            <button onClick={handleSaveQuotation} disabled={isSaving || !canSave} className="btn-primary">
               {isSaving ? 'Saving…' : isEditing ? 'Update quotation' : 'Create quotation'}
             </button>
           </div>
@@ -698,12 +793,25 @@ function QuotationCreation({ setActiveSection }) {
         footer={
           <>
             <button className="btn-ghost" onClick={() => setShowViewQuotationModal(false)}>Close</button>
+            {selectedQuotationForView?.status === 'pending' && (
+              <>
+                <button className="btn-ghost text-danger" onClick={() => setQuotationStatus(selectedQuotationForView.id, 'rejected')}>Reject</button>
+                <button className="btn-secondary" onClick={() => setQuotationStatus(selectedQuotationForView.id, 'accepted')}>Accept</button>
+              </>
+            )}
+            {canConvert(selectedQuotationForView) && (
+              <button className="btn-secondary" onClick={() => convertToInvoice(selectedQuotationForView)}>Convert to invoice</button>
+            )}
             {selectedQuotationForView && <button className="btn-primary" onClick={() => downloadPDF(selectedQuotationForView)}>Download PDF</button>}
           </>
         }
       >
         {selectedQuotationForView && (
           <div className="space-y-6">
+            <div className="flex items-center gap-2">
+              <span className={`pill ${statusPill(selectedQuotationForView.status)}`}>{selectedQuotationForView.status || 'pending'}</span>
+              {selectedQuotationForView.documentMode === 'parts' && <span className="pill pill-muted">Parts sale</span>}
+            </div>
             <div className="flex flex-col sm:flex-row sm:justify-between gap-4">
               <div>
                 <h4 className="stat-label">Quoted for</h4>

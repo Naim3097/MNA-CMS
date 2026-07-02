@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useCustomer } from '../context/CustomerContext'
 import { useMechanics } from '../context/MechanicsContext'
 import { usePartsContext } from '../context/PartsContext'
@@ -10,7 +10,7 @@ import InvoicePreview from './InvoicePreview'
 import PartsSelector from './PartsSelector'
 import { ResponsiveModal, ResponsiveTable, StatsGrid } from './ui'
 
-function CustomerInvoiceCreation({ setActiveSection }) {
+function CustomerInvoiceCreation({ setActiveSection, intent, clearIntent }) {
   // --- States ---
   const [viewMode, setViewMode] = useState('list') // 'list', 'form', 'analysis'
   const [isEditing, setIsEditing] = useState(false)
@@ -54,6 +54,15 @@ function CustomerInvoiceCreation({ setActiveSection }) {
   // Commission 2.0 (Flexible Multi-Person)
   const [mechanics, setMechanics] = useState([]) // [{ id, name, commissionType: 'percentage'|'fixed', commissionValue, commissionAmount }]
   const [requestDepositAmount, setRequestDepositAmount] = useState(0)
+
+  // Collapsible optional sections (default collapsed; auto-expand when editing populated data)
+  const [showDiscount, setShowDiscount] = useState(false)
+  const [showDeposit, setShowDeposit] = useState(false)
+  const [showCommission, setShowCommission] = useState(false)
+  const [showDirectLending, setShowDirectLending] = useState(false)
+
+  // Remembers the last nav-intent nonce we handled so we react once per navigation.
+  const lastHandledNonce = useRef(null)
 
   // Data
   const [invoiceHistory, setInvoiceHistory] = useState([])
@@ -131,6 +140,55 @@ function CustomerInvoiceCreation({ setActiveSection }) {
     })
     return () => unsub()
   }, [])
+
+  // --- Consume navigation intent (start a NEW invoice, optionally prefilled) ---
+  // Fired when Home / CustomerDatabase / Quotation hands us an intent. Never deducts
+  // stock — prefills only populate the form; deduction happens on real save.
+  useEffect(() => {
+     if (!intent || intent.view !== 'form' || intent.nonce === lastHandledNonce.current) return
+
+     resetForm()
+     setViewMode('form')
+     setDocumentMode(intent.mode || 'repair')
+
+     // Prefill customer (incl. IC / address fields the form edits)
+     if (intent.customer) {
+        const c = intent.customer
+        setSelectedCustomer({
+           id: c.id || null,
+           name: c.name || '',
+           phone: c.phone || '',
+           email: c.email || '',
+           ic: c.ic || '',
+           address: c.address || ''
+        })
+     }
+
+     // Prefill from a source quotation (map to CIC line/field shapes; no stock touched)
+     if (intent.quote) {
+        const qd = intent.quote
+        setManualParts((qd.partsOrdered || []).map(p => ({
+           partId: p.partId ?? null,
+           sku: p.sku || '',
+           partName: p.partName || '',
+           quantity: Number(p.quantity) || 0,
+           pricePerUnit: Number(p.pricePerUnit) || 0,
+           total: Number(p.total) || Math.round((Number(p.quantity) || 0) * (Number(p.pricePerUnit) || 0) * 100) / 100
+        })))
+        setLaborCharges(qd.laborCharges || [])
+        setVehicleInfo(qd.vehicleInfo || { make: '', model: '', year: '', plate: '' })
+        setWorkDescription(qd.workDescription || '')
+        if (qd.discount) {
+           setDiscount(qd.discount)
+           setShowDiscount(true)
+        }
+        if (qd.discountType) setDiscountType(qd.discountType)
+     }
+
+     lastHandledNonce.current = intent.nonce
+     if (clearIntent) clearIntent()
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [intent])
 
   // --- Calculations (Robust - all values forced to float) ---
   const calculateTotals = () => {
@@ -242,6 +300,11 @@ function CustomerInvoiceCreation({ setActiveSection }) {
      setRequestDepositAmount(0)
      setParentInvoiceId(i.parentInvoiceId || null)
      setParentInvoiceNumber(i.parentInvoiceNumber || null)
+     // Auto-expand any optional section that already carries a value.
+     setShowDiscount(Number(i.discount) > 0)
+     setShowDeposit(Number(i.deposit) > 0)
+     setShowCommission((i.mechanics || []).length > 0 || Number(i.partsSupplierCost) > 0)
+     setShowDirectLending(!!i.useDirectLending)
      setViewMode('form')
   }
 
@@ -288,8 +351,10 @@ function CustomerInvoiceCreation({ setActiveSection }) {
   }
 
   const handleSaveInvoice = async () => {
-    if (!selectedCustomer) return alert('Select Customer')
-    if (manualParts.length === 0 && laborCharges.length === 0) return alert('Add items')
+    // Guard is enforced by the disabled Save button + inline reason (see canSave).
+    // Kept as a silent safety net so the save logic below is unchanged.
+    if (!selectedCustomer) return
+    if (manualParts.length === 0 && laborCharges.length === 0) return
 
     // Helper to recursively remove undefined (Firebase safety)
     const sanitize = (obj) => {
@@ -439,6 +504,11 @@ function CustomerInvoiceCreation({ setActiveSection }) {
      setParentInvoiceId(null)
      setParentInvoiceNumber(null)
      setRequestDepositAmount(0)
+     // Optional sections start collapsed on a fresh form.
+     setShowDiscount(false)
+     setShowDeposit(false)
+     setShowCommission(false)
+     setShowDirectLending(false)
   }
 
   const handleDelete = async (invoice) => {
@@ -575,6 +645,19 @@ function CustomerInvoiceCreation({ setActiveSection }) {
   const analysis = getAnalysis()
   const totals = calculateTotals()
 
+  // Save gate: need a customer and at least one line item. Drives the disabled
+  // state + inline reason on the Save button (replaces the old save-time alerts).
+  const canSave = !!selectedCustomer && (manualParts.length > 0 || laborCharges.length > 0)
+  const saveReason = !selectedCustomer
+     ? 'Add a customer and at least one item to save'
+     : (manualParts.length === 0 && laborCharges.length === 0)
+        ? 'Add at least one part or labour item to save'
+        : ''
+
+  // Show the friendly empty state only with a truly empty list (no search/filter active).
+  const isListEmpty = invoiceHistory.length === 0 && !searchQuery && statusFilter === 'all'
+  const startNewInvoice = () => { resetForm(); setViewMode('form') }
+
   // --- Render Helpers ---
   const formatCurrency = (v) => new Intl.NumberFormat('ms-MY', { style: 'currency', currency: 'MYR' }).format(v || 0)
   const formatDate = (d) => (d ? new Date(d).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }) : '—')
@@ -695,13 +778,24 @@ function CustomerInvoiceCreation({ setActiveSection }) {
                 { label: 'Total invoices', value: invoiceHistory.length },
                 { label: 'Total revenue', value: formatCurrency(analysis.rev) },
                 { label: 'Total profit', value: formatCurrency(analysis.profit), sublabel: `Margin ${analysis.margin.toFixed(1)}%` },
-                { label: 'New invoice', value: 'Create', onClick: () => { resetForm(); setViewMode('form') } },
+                { label: 'New invoice', value: 'Create', onClick: startNewInvoice },
              ]}
           />
        )}
 
+       {/* ── List view: empty state ──────────────────────── */}
+       {viewMode === 'list' && isListEmpty && (
+          <div className="card">
+             <div className="card-flat text-center py-12 px-4">
+                <h3 className="section-title mb-1">No invoices yet</h3>
+                <p className="subtle mb-4">Create your first invoice to bill a repair job or a parts sale.</p>
+                <button className="btn-primary" onClick={startNewInvoice}>New invoice</button>
+             </div>
+          </div>
+       )}
+
        {/* ── List view ───────────────────────────────────── */}
-       {viewMode === 'list' && (
+       {viewMode === 'list' && !isListEmpty && (
           <div className="card">
              <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between mb-4">
                 <h3 className="section-title">Billing</h3>
@@ -751,22 +845,10 @@ function CustomerInvoiceCreation({ setActiveSection }) {
 
              <p className="form-note"><span className="req-star">*</span> Required before this invoice can be saved</p>
 
-             {/* Document mode toggle */}
-             <div className="card">
-                <div className="field-label">Document type</div>
-                <div className="segmented">
-                   <button className={documentMode === 'repair' ? 'active' : ''} onClick={() => setDocumentMode('repair')}>Car Repair</button>
-                   <button className={documentMode === 'parts' ? 'active' : ''} onClick={() => setDocumentMode('parts')}>Parts Sale</button>
-                </div>
-                <p className="field-hint">
-                   {isParts ? 'Parts Sale hides vehicle, work description, and mechanic commission.' : 'Car Repair includes vehicle, work description, and commission.'}
-                </p>
-             </div>
-
-             {/* Customer */}
+             {/* Step 1 — Customer (gates the rest of the form) */}
              <div className="card">
                 <div className="flex items-center justify-between mb-3">
-                   <h3 className="section-title req">Customer</h3>
+                   <h3 className="section-title req">1&nbsp;&nbsp;Customer</h3>
                    {selectedCustomer && <button onClick={() => setSelectedCustomer(null)} className="btn-ghost btn-sm">Change</button>}
                 </div>
                 {selectedCustomer ? (
@@ -791,10 +873,26 @@ function CustomerInvoiceCreation({ setActiveSection }) {
                 )}
              </div>
 
+             {/* Steps 2–4 unlock once a customer is chosen */}
+             <div className={selectedCustomer ? 'space-y-4' : 'space-y-4 opacity-50 pointer-events-none select-none'} aria-disabled={!selectedCustomer}>
+                {!selectedCustomer && <p className="subtle">Select a customer to continue.</p>}
+
+             {/* Step 2 — Document type */}
+             <div className="card">
+                <div className="field-label">2&nbsp;&nbsp;Document type</div>
+                <div className="segmented">
+                   <button className={documentMode === 'repair' ? 'active' : ''} onClick={() => setDocumentMode('repair')}>Car Repair</button>
+                   <button className={documentMode === 'parts' ? 'active' : ''} onClick={() => setDocumentMode('parts')}>Parts Sale</button>
+                </div>
+                <p className="field-hint">
+                   {isParts ? 'Parts Sale hides vehicle, work description, and mechanic commission.' : 'Car Repair includes vehicle, work description, and commission.'}
+                </p>
+             </div>
+
              {/* Vehicle + work (repair only) */}
              {!isParts && (
                 <div className="card">
-                   <h3 className="section-title mb-3">Vehicle information</h3>
+                   <h3 className="section-title mb-3">Vehicle information <span className="text-muted font-normal">(optional)</span></h3>
                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div>
                          <label className="field-label">Make / Model</label>
@@ -816,10 +914,10 @@ function CustomerInvoiceCreation({ setActiveSection }) {
                 </div>
              )}
 
-             {/* Parts & Labor */}
+             {/* Step 3 — Parts & labour */}
              <div className="card">
                 <div className="flex items-center justify-between mb-3">
-                   <h3 className="section-title req">Parts &amp; labor</h3>
+                   <h3 className="section-title req">3&nbsp;&nbsp;Parts &amp; labour</h3>
                    <div className="flex gap-2">
                       <button onClick={() => setShowPartPicker(true)} className="btn-secondary btn-sm">Add part</button>
                       <button onClick={() => setLaborCharges([...laborCharges, { description: '', amount: 0 }])} className="btn-secondary btn-sm">Add labor</button>
@@ -881,71 +979,105 @@ function CustomerInvoiceCreation({ setActiveSection }) {
                 </div>
              </div>
 
-             {/* Discount */}
+             {/* Step 4 — Payment (deposit / request link) */}
              <div className="card">
-                <h3 className="section-title mb-3">Discount</h3>
-                <div className="flex flex-wrap gap-3 items-end">
-                   <div className="segmented">
-                      <button className={discountType === 'percentage' ? 'active' : ''} onClick={() => setDiscountType('percentage')}>Percent</button>
-                      <button className={discountType === 'fixed' ? 'active' : ''} onClick={() => setDiscountType('fixed')}>Fixed RM</button>
-                   </div>
-                   <div className="flex-1 min-w-[140px]">
-                      <label className="field-label">{discountType === 'percentage' ? 'Discount %' : 'Discount amount (RM)'}</label>
-                      <input type="number" className="input nums" placeholder="0" value={discount} onChange={e => setDiscount(e.target.value)} />
-                   </div>
-                   {Number(discount) > 0 && <div className="text-danger font-medium nums">-{formatCurrency(totals.discountAmount)}</div>}
+                <div className="flex items-center justify-between">
+                   <h3 className="section-title">4&nbsp;&nbsp;Payment <span className="text-muted font-normal">(optional)</span></h3>
+                   {!showDeposit
+                      ? <button type="button" onClick={() => setShowDeposit(true)} className="btn-ghost btn-sm">Add deposit</button>
+                      : <button type="button" onClick={() => setShowDeposit(false)} className="btn-ghost btn-sm">Hide</button>}
                 </div>
+                {!showDeposit ? (
+                   <p className="field-hint mt-1">No deposit — full balance of {formatCurrency(totals.total)} is due. Add a deposit or request a payment link.</p>
+                ) : (
+                   <>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end mt-3">
+                         <div>
+                            <label className="field-label">Deposit paid (offline)</label>
+                            <input type="number" className="input nums" value={deposit} onChange={e => setDeposit(e.target.value)} />
+                         </div>
+                         <div>
+                            <label className="field-label">Request deposit (link)</label>
+                            <input type="number" className="input nums" placeholder="0.00" value={requestDepositAmount} onChange={e => setRequestDepositAmount(e.target.value)} />
+                         </div>
+                         <div className="sm:text-right">
+                            <div className="stat-label">Balance due</div>
+                            <div className="text-xl font-semibold text-ink nums">{formatCurrency(totals.balanceDue)}</div>
+                         </div>
+                      </div>
+                      {requestDepositAmount > 0 && <p className="field-hint">Status will be "Pending link payment". Confirm receipt to mark as paid.</p>}
+                   </>
+                )}
              </div>
 
-             {/* Payment & Deposit */}
+             {/* Discount (optional, collapsed) */}
              <div className="card">
-                <h3 className="section-title mb-3">Payment &amp; deposit</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
-                   <div>
-                      <label className="field-label">Deposit paid (offline)</label>
-                      <input type="number" className="input nums" value={deposit} onChange={e => setDeposit(e.target.value)} />
-                   </div>
-                   <div>
-                      <label className="field-label">Request deposit (link)</label>
-                      <input type="number" className="input nums" placeholder="0.00" value={requestDepositAmount} onChange={e => setRequestDepositAmount(e.target.value)} />
-                   </div>
-                   <div className="sm:text-right">
-                      <div className="stat-label">Balance due</div>
-                      <div className="text-xl font-semibold text-ink nums">{formatCurrency(totals.balanceDue)}</div>
-                   </div>
+                <div className="flex items-center justify-between">
+                   <h3 className="section-title">Discount <span className="text-muted font-normal">(optional)</span></h3>
+                   {!showDiscount
+                      ? <button type="button" onClick={() => setShowDiscount(true)} className="btn-ghost btn-sm">Add discount</button>
+                      : <button type="button" onClick={() => setShowDiscount(false)} className="btn-ghost btn-sm">Hide</button>}
                 </div>
-                {requestDepositAmount > 0 && <p className="field-hint">Status will be "Pending link payment". Confirm receipt to mark as paid.</p>}
-             </div>
-
-             {/* DirectLending / BNPL */}
-             <div className="card">
-                <label className="flex items-center gap-3 cursor-pointer select-none">
-                   <input type="checkbox" className="w-5 h-5 accent-ink" checked={!!useDirectLending} onChange={e => { setUseDirectLending(e.target.checked); if (!e.target.checked) setDirectLendingAmount(0) }} />
-                   <span className="section-title">Customer uses DirectLending (BNPL)</span>
-                </label>
-                {useDirectLending && (
-                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end mt-3">
-                      <div>
-                         <label className="field-label">Approved amount (RM)</label>
-                         <input type="number" min="0" className="input nums" placeholder="0.00" value={directLendingAmount} onChange={e => setDirectLendingAmount(e.target.value)} />
+                {showDiscount && (
+                   <div className="flex flex-wrap gap-3 items-end mt-3">
+                      <div className="segmented">
+                         <button className={discountType === 'percentage' ? 'active' : ''} onClick={() => setDiscountType('percentage')}>Percent</button>
+                         <button className={discountType === 'fixed' ? 'active' : ''} onClick={() => setDiscountType('fixed')}>Fixed RM</button>
                       </div>
-                      <div className="sm:text-right">
-                         <div className="stat-label">DirectLending covers</div>
-                         <div className="text-lg font-semibold text-ink nums">{formatCurrency(parseFloat(directLendingAmount) || 0)}</div>
+                      <div className="flex-1 min-w-[140px]">
+                         <label className="field-label">{discountType === 'percentage' ? 'Discount %' : 'Discount amount (RM)'}</label>
+                         <input type="number" className="input nums" placeholder="0" value={discount} onChange={e => setDiscount(e.target.value)} />
                       </div>
-                      <div className="sm:text-right">
-                         <div className="stat-label">Customer pays</div>
-                         <div className="text-lg font-semibold text-ink nums">{formatCurrency(totals.customerPayableAmount)}</div>
-                      </div>
+                      {Number(discount) > 0 && <div className="text-danger font-medium nums">-{formatCurrency(totals.discountAmount)}</div>}
                    </div>
                 )}
              </div>
 
-             {/* Internal costing & commission (repair only) */}
+             {/* Direct lending / BNPL (optional, collapsed) */}
+             <div className="card">
+                <div className="flex items-center justify-between">
+                   <h3 className="section-title">Direct lending <span className="text-muted font-normal">(optional)</span></h3>
+                   {!showDirectLending
+                      ? <button type="button" onClick={() => setShowDirectLending(true)} className="btn-ghost btn-sm">More options</button>
+                      : <button type="button" onClick={() => { setShowDirectLending(false) }} className="btn-ghost btn-sm">Hide</button>}
+                </div>
+                {showDirectLending && (
+                   <>
+                      <label className="flex items-center gap-3 cursor-pointer select-none mt-3">
+                         <input type="checkbox" className="w-5 h-5 accent-ink" checked={!!useDirectLending} onChange={e => { setUseDirectLending(e.target.checked); if (!e.target.checked) setDirectLendingAmount(0) }} />
+                         <span className="font-medium text-ink">Customer uses DirectLending (BNPL)</span>
+                      </label>
+                      {useDirectLending && (
+                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end mt-3">
+                            <div>
+                               <label className="field-label">Approved amount (RM)</label>
+                               <input type="number" min="0" className="input nums" placeholder="0.00" value={directLendingAmount} onChange={e => setDirectLendingAmount(e.target.value)} />
+                            </div>
+                            <div className="sm:text-right">
+                               <div className="stat-label">DirectLending covers</div>
+                               <div className="text-lg font-semibold text-ink nums">{formatCurrency(parseFloat(directLendingAmount) || 0)}</div>
+                            </div>
+                            <div className="sm:text-right">
+                               <div className="stat-label">Customer pays</div>
+                               <div className="text-lg font-semibold text-ink nums">{formatCurrency(totals.customerPayableAmount)}</div>
+                            </div>
+                         </div>
+                      )}
+                   </>
+                )}
+             </div>
+
+             {/* Internal costing & commission (repair only, optional, collapsed) */}
              {!isParts && (
                 <div className="card">
-                   <h3 className="section-title mb-3">Internal costing &amp; commission</h3>
-                   <div className="space-y-4">
+                   <div className="flex items-center justify-between mb-1">
+                      <h3 className="section-title">Mechanic &amp; commission <span className="text-muted font-normal">(optional)</span></h3>
+                      {!showCommission
+                         ? <button type="button" onClick={() => setShowCommission(true)} className="btn-ghost btn-sm">Mechanic &amp; commission</button>
+                         : <button type="button" onClick={() => setShowCommission(false)} className="btn-ghost btn-sm">Hide</button>}
+                   </div>
+                   {showCommission && (
+                   <div className="space-y-4 mt-2">
                       <div>
                          <label className="field-label">Supplier part costs (RM)</label>
                          <input type="number" className="input nums" value={totalPartsSupplierCost} onChange={e => setTotalPartsSupplierCost(e.target.value)} />
@@ -976,10 +1108,11 @@ function CustomerInvoiceCreation({ setActiveSection }) {
                          ))}
                          <div className="text-right text-sm text-muted mt-2">Total commission: <b className="text-ink nums">{formatCurrency(totals.commission)}</b></div>
                       </div>
+                      <div className="mt-1 text-right text-sm text-muted border-t border-line pt-3">
+                         Est. net profit: <b className="text-ok nums">{formatCurrency(totals.total - (Number(totalPartsSupplierCost) || 0) - totals.commission)}</b>
+                      </div>
                    </div>
-                   <div className="mt-3 text-right text-sm text-muted border-t border-line pt-3">
-                      Est. net profit: <b className="text-ok nums">{formatCurrency(totals.total - (Number(totalPartsSupplierCost) || 0) - totals.commission)}</b>
-                   </div>
+                   )}
                 </div>
              )}
 
@@ -997,14 +1130,17 @@ function CustomerInvoiceCreation({ setActiveSection }) {
                 </div>
              </div>
 
+             </div>{/* end steps 2–4 gate */}
+
              {/* Sticky save bar */}
              <div className="action-bar -mx-4 sm:-mx-0 sm:rounded-2xl">
                 <div className="flex-1 min-w-0">
                    <div className="text-xs text-muted">Total</div>
                    <div className="text-lg font-semibold text-ink nums">{formatCurrency(totals.total)}</div>
+                   {!canSave && <div className="text-xs text-danger">{saveReason}</div>}
                 </div>
                 <button onClick={() => setViewMode('list')} className="btn-ghost">Cancel</button>
-                <button onClick={handleSaveInvoice} disabled={isSaving || !selectedCustomer} className="btn-primary">{isSaving ? 'Saving…' : 'Save invoice'}</button>
+                <button onClick={handleSaveInvoice} disabled={isSaving || !canSave} title={!canSave ? saveReason : undefined} className="btn-primary">{isSaving ? 'Saving…' : 'Save invoice'}</button>
              </div>
           </div>
        )}
