@@ -14,7 +14,7 @@ const fmtDate = (d) =>
 
 const emptyForm = { name: '', phone: '', email: '', ic: '', address: '' }
 
-function CustomerDatabase({ setActiveSection }) {
+function CustomerDatabase({ setActiveSection, openInvoice }) {
   const { customers, isLoadingCustomers, loadCustomers, selectCustomer } = useCustomer()
 
   const [inv, setInv] = useState({ byId: {}, loading: true })
@@ -97,7 +97,10 @@ function CustomerDatabase({ setActiveSection }) {
   }, [rows])
 
   const openDetail = (r) => { setSelected(r); setEditing(false) }
-  const handleNewInvoice = (r) => { selectCustomer(r); setActiveSection('customer-invoicing') }
+  const handleNewInvoice = (r) => {
+    if (openInvoice) openInvoice({ mode: 'repair', customer: r })
+    else { selectCustomer(r); setActiveSection('customer-invoicing') }
+  }
 
   const handleAdd = async () => {
     if (!addForm.name.trim() || !addForm.phone.trim()) return alert('Name and phone are required.')

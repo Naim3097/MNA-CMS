@@ -1,4 +1,4 @@
-import { useState, useEffect, Suspense, lazy } from 'react'
+import { useState, useEffect, useRef, Suspense, lazy } from 'react'
 import Header from './components/Header'
 import Sidebar from './components/Sidebar'
 import LoginScreen from './components/LoginScreen'
@@ -12,7 +12,8 @@ import { DataJoinProvider } from './context/DataJoinContext'
 import { onAuthStateChanged } from 'firebase/auth'
 import { auth } from './firebaseConfig'
 
-// Lazy-loaded sections (single "Customer" hub)
+// Lazy-loaded sections
+const Home = lazy(() => import('./components/Home'))
 const CustomerDatabase = lazy(() => import('./components/CustomerDatabase'))
 const PartsManagement = lazy(() => import('./components/PartsManagement'))
 const CustomerInvoiceCreation = lazy(() => import('./components/CustomerInvoiceCreation'))
@@ -20,16 +21,44 @@ const QuotationCreation = lazy(() => import('./components/QuotationCreation'))
 const AccountingDashboard = lazy(() => import('./components/AccountingDashboard'))
 const MechanicCommissionDashboard = lazy(() => import('./components/MechanicCommissionDashboard'))
 
-// Single source of truth for navigation + section titles
-const NAV_ITEMS = [
-  { id: 'customers', label: 'Customers' },
-  { id: 'inventory', label: 'Inventory' },
-  { id: 'customer-invoicing', label: 'Invoices & Billing' },
-  { id: 'quotation', label: 'Quotations' },
-  { id: 'accounting', label: 'Accounting' },
-  { id: 'mechanic-commissions', label: 'Mechanic Commissions' },
+// Grouped navigation. Items with an `action` are shortcuts that open a builder
+// in form mode; the rest switch section directly.
+const NAV_GROUPS = [
+  { items: [{ id: 'home', label: 'Home' }] },
+  {
+    title: 'Create',
+    items: [
+      { id: 'new-invoice', label: 'New invoice', action: 'invoice-form' },
+      { id: 'new-quotation', label: 'New quotation', action: 'quotation-form' },
+    ],
+  },
+  {
+    title: 'Records',
+    items: [
+      { id: 'customers', label: 'Customers' },
+      { id: 'inventory', label: 'Inventory' },
+      { id: 'customer-invoicing', label: 'Invoices' },
+      { id: 'quotation', label: 'Quotations' },
+    ],
+  },
+  {
+    title: 'Money',
+    items: [
+      { id: 'accounting', label: 'Accounting' },
+      { id: 'mechanic-commissions', label: 'Mechanic Commissions' },
+    ],
+  },
 ]
-const SECTION_TITLES = Object.fromEntries(NAV_ITEMS.map((n) => [n.id, n.label]))
+
+const SECTION_TITLES = {
+  home: 'Home',
+  customers: 'Customers',
+  inventory: 'Inventory',
+  'customer-invoicing': 'Invoices & Billing',
+  quotation: 'Quotations',
+  accounting: 'Accounting',
+  'mechanic-commissions': 'Mechanic Commissions',
+}
 
 const LoadingSpinner = () => (
   <div className="flex items-center justify-center py-16">
@@ -39,14 +68,19 @@ const LoadingSpinner = () => (
 )
 
 function App() {
-  const [activeSection, setActiveSection] = useState('customers')
+  const [activeSection, setActiveSection] = useState('home')
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false)
   const [isPaymentCallback, setIsPaymentCallback] = useState(false)
 
+  // Navigation "intent" — lets one screen open a builder in the right mode with a
+  // prefilled customer / source quote (fixes the customer→invoice handoff).
+  const [invoiceIntent, setInvoiceIntent] = useState(null)
+  const [quotationIntent, setQuotationIntent] = useState(null)
+  const intentNonce = useRef(0)
+
   useEffect(() => {
-    // Payment callback bypasses the auth gate
     const params = new URLSearchParams(window.location.search)
     if (params.get('payment_status') && params.get('invoice')) {
       setIsPaymentCallback(true)
@@ -59,6 +93,38 @@ function App() {
     })
     return unsubscribe
   }, [])
+
+  const openInvoice = (opts = {}) => {
+    intentNonce.current += 1
+    setInvoiceIntent({
+      nonce: intentNonce.current,
+      view: 'form',
+      mode: opts.mode || 'repair',
+      customer: opts.customer || null,
+      quote: opts.quote || null,
+    })
+    setActiveSection('customer-invoicing')
+    setIsMobileSidebarOpen(false)
+  }
+
+  const openQuotation = (opts = {}) => {
+    intentNonce.current += 1
+    setQuotationIntent({
+      nonce: intentNonce.current,
+      view: 'form',
+      mode: opts.mode || 'repair',
+      customer: opts.customer || null,
+    })
+    setActiveSection('quotation')
+    setIsMobileSidebarOpen(false)
+  }
+
+  const onNavigate = (item) => {
+    setIsMobileSidebarOpen(false)
+    if (item.action === 'invoice-form') return openInvoice({})
+    if (item.action === 'quotation-form') return openQuotation({})
+    setActiveSection(item.id)
+  }
 
   if (loading) {
     return (
@@ -91,20 +157,35 @@ function App() {
 
   const renderActiveSection = () => {
     switch (activeSection) {
+      case 'home':
+        return <Home openInvoice={openInvoice} openQuotation={openQuotation} setActiveSection={setActiveSection} />
       case 'customers':
-        return <CustomerDatabase setActiveSection={setActiveSection} />
+        return <CustomerDatabase setActiveSection={setActiveSection} openInvoice={openInvoice} />
       case 'inventory':
         return <PartsManagement />
       case 'customer-invoicing':
-        return <CustomerInvoiceCreation setActiveSection={setActiveSection} />
+        return (
+          <CustomerInvoiceCreation
+            setActiveSection={setActiveSection}
+            intent={invoiceIntent}
+            clearIntent={() => setInvoiceIntent(null)}
+          />
+        )
       case 'quotation':
-        return <QuotationCreation setActiveSection={setActiveSection} />
+        return (
+          <QuotationCreation
+            setActiveSection={setActiveSection}
+            intent={quotationIntent}
+            clearIntent={() => setQuotationIntent(null)}
+            openInvoice={openInvoice}
+          />
+        )
       case 'accounting':
         return <AccountingDashboard />
       case 'mechanic-commissions':
         return <MechanicCommissionDashboard />
       default:
-        return <CustomerDatabase setActiveSection={setActiveSection} />
+        return <Home openInvoice={openInvoice} openQuotation={openQuotation} setActiveSection={setActiveSection} />
     }
   }
 
@@ -117,9 +198,9 @@ function App() {
               <DataJoinProvider>
                 <div className="flex h-dvh overflow-hidden bg-bg text-ink">
                   <Sidebar
-                    navItems={NAV_ITEMS}
+                    navGroups={NAV_GROUPS}
                     activeSection={activeSection}
-                    setActiveSection={setActiveSection}
+                    onNavigate={onNavigate}
                     isMobileOpen={isMobileSidebarOpen}
                     setIsMobileOpen={setIsMobileSidebarOpen}
                     userEmail={user.email}

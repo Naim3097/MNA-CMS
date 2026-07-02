@@ -1,11 +1,6 @@
 import { logoBase64 } from '../assets/logo'
 
-const Sidebar = ({ navItems = [], activeSection, setActiveSection, isMobileOpen, setIsMobileOpen, userEmail, onLogout }) => {
-  const go = (id) => {
-    setActiveSection(id)
-    setIsMobileOpen(false)
-  }
-
+const Sidebar = ({ navGroups = [], activeSection, onNavigate, isMobileOpen, setIsMobileOpen, userEmail, onLogout }) => {
   return (
     <>
       {/* Mobile overlay */}
@@ -46,24 +41,31 @@ const Sidebar = ({ navItems = [], activeSection, setActiveSection, isMobileOpen,
 
         <div className="mx-4 border-t border-line" />
 
-        {/* Navigation (text-only, single hub) */}
-        <nav className="flex-1 overflow-y-auto touch-scroll px-3 py-4 space-y-1">
-          {navItems.map((item) => {
-            const active = activeSection === item.id
-            return (
-              <button
-                key={item.id}
-                onClick={() => go(item.id)}
-                className={`nav-link w-full text-left ${active ? 'nav-link-active' : ''}`}
-                aria-current={active ? 'page' : undefined}
-              >
-                {active && (
-                  <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-accent" aria-hidden="true" />
-                )}
-                {item.label}
-              </button>
-            )
-          })}
+        {/* Grouped navigation (text-only, no icons) */}
+        <nav className="flex-1 overflow-y-auto touch-scroll px-3 py-3">
+          {navGroups.map((group, gi) => (
+            <div key={group.title || gi} className={gi > 0 ? 'mt-2' : ''}>
+              {group.title && <div className="nav-section">{group.title}</div>}
+              <div className="space-y-1">
+                {group.items.map((item) => {
+                  const active = activeSection === item.id
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => onNavigate(item)}
+                      className={`nav-link w-full text-left ${active ? 'nav-link-active' : ''}`}
+                      aria-current={active ? 'page' : undefined}
+                    >
+                      {active && (
+                        <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-accent" aria-hidden="true" />
+                      )}
+                      {item.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
 
         {/* Footer */}
