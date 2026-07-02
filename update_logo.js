@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const imagePath = path.resolve(__dirname, 'src/assets/One X Transmission Logo.png');
+const imagePath = path.resolve(__dirname, 'src/assets/LOGO MNA.png');
 const outputPath = path.resolve(__dirname, 'src/assets/logo.js');
 
 console.log('Reading image from:', imagePath);
