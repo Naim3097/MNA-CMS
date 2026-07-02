@@ -1,0 +1,228 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==========================================================================
+   MNA Dynamic Torque — 2026 design system
+   Mobile-first · typography-led · no icons · one swappable accent
+   Re-theme to the MNA logo later by editing the --accent triplet below.
+   ========================================================================== */
+
+:root {
+  --bg:         247 247 248;   /* app background */
+  --surface:    255 255 255;   /* cards / bars */
+  --raised:     255 255 255;   /* popovers / sheets */
+  --ink:         18  18  20;   /* primary text / primary buttons */
+  --muted:      108 108 116;   /* secondary text */
+  --faint:      150 150 158;   /* placeholders / hints */
+  --line:       228 228 231;   /* hairline borders */
+  --accent:      29 120 205;   /* MNA blue (from logo); danger stays red */
+  --accent-ink: 255 255 255;   /* text on accent */
+  --ok:          22 128  61;   /* success */
+  --warn:       176 116  12;   /* warning */
+  --danger:     220  38  38;   /* destructive */
+}
+
+@layer base {
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html {
+    font-size: 16px;
+    -webkit-text-size-adjust: 100%;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    scroll-behavior: smooth;
+    overflow-x: hidden;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    line-height: 1.6;
+    color: rgb(var(--ink));
+    background-color: rgb(var(--bg));
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    overscroll-behavior-y: none;
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  /* Prevent iOS auto-zoom on focus by forcing 16px inputs on phones */
+  input, textarea, select { outline: none; font: inherit; font-size: 16px; }
+  @media (min-width: 640px) { input, textarea, select { font-size: inherit; } }
+
+  img { max-width: 100%; height: auto; display: block; }
+  button { border: none; background: none; font: inherit; color: inherit; cursor: pointer; }
+
+  ::selection { background: rgb(var(--ink)); color: #fff; }
+
+  /* Refined scrollbars */
+  * { scrollbar-width: thin; scrollbar-color: rgb(var(--line)) transparent; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb {
+    background: rgb(var(--line));
+    border-radius: 9999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+
+  @media (hover: none) { button:hover { transform: none; } }
+}
+
+@layer components {
+  /* ── Buttons ─────────────────────────────────────────────── */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl2 px-5 font-medium text-[15px]
+           min-h-touch transition-all duration-150 select-none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn:active { @apply scale-[0.98]; }
+  .btn:disabled { @apply opacity-50 cursor-not-allowed; }
+  .btn:focus-visible { @apply outline-none ring-4 ring-ink/10; }
+
+  .btn-primary   { @apply btn bg-ink text-white; }
+  .btn-primary:hover   { @apply bg-ink/90; }
+  .btn-accent    { @apply btn bg-accent text-accent-ink; }
+  .btn-accent:hover    { @apply brightness-95; }
+  .btn-secondary { @apply btn bg-surface text-ink border border-line; }
+  .btn-secondary:hover { @apply bg-black/[0.03]; }
+  .btn-ghost     { @apply btn bg-transparent text-ink; }
+  .btn-ghost:hover     { @apply bg-black/[0.05]; }
+  .btn-danger    { @apply btn bg-danger text-white; }
+  .btn-danger:hover    { @apply brightness-95; }
+  .btn-tertiary  { @apply btn bg-transparent text-ink; }   /* legacy alias */
+  .btn-tertiary:hover  { @apply bg-black/[0.05]; }
+
+  .btn-sm    { @apply min-h-[40px] px-3.5 text-sm rounded-xl; }
+  .btn-block { @apply w-full; }
+
+  /* ── Inputs ──────────────────────────────────────────────── */
+  .input, .input-field {
+    @apply w-full min-h-touch rounded-xl border border-line bg-surface px-4 text-ink
+           placeholder:text-faint transition-colors duration-150;
+  }
+  .input:focus, .input-field:focus { @apply outline-none border-ink/40 ring-4 ring-ink/[0.06]; }
+  .textarea, textarea.input, textarea.input-field { @apply py-3 leading-relaxed; min-height: 96px; }
+  .select, select.input, select.input-field { @apply pr-10; }
+  .field-label { @apply block text-sm font-medium text-ink mb-1.5; }
+  .field-hint  { @apply text-xs text-muted mt-1; }
+
+  /* ── Surfaces ────────────────────────────────────────────── */
+  .card       { @apply bg-surface border border-line rounded-2xl shadow-soft p-4 sm:p-5; }
+  .card-flat  { @apply bg-surface border border-line rounded-2xl p-4 sm:p-5; }
+  .panel      { @apply bg-surface border border-line rounded-2xl; }
+  .divider    { @apply border-t border-line; }
+
+  /* ── Stat tiles ──────────────────────────────────────────── */
+  .stat        { @apply bg-surface border border-line rounded-2xl p-4 sm:p-5; }
+  .stat-label  { @apply text-xs font-medium uppercase tracking-wide text-muted; }
+  .stat-value  { @apply mt-1 text-2xl font-semibold tracking-tight text-ink; font-variant-numeric: tabular-nums; }
+
+  /* ── Status pills (text, no icons) ───────────────────────── */
+  .pill        { @apply inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold whitespace-nowrap; }
+  .pill-ok     { @apply bg-ok/10 text-ok; }
+  .pill-warn   { @apply bg-warn/10 text-warn; }
+  .pill-danger { @apply bg-danger/10 text-danger; }
+  .pill-muted  { @apply bg-black/[0.05] text-muted; }
+  .pill-ink    { @apply bg-ink text-white; }
+  .pill-accent { @apply bg-accent/10 text-accent; }
+
+  /* ── Titles ──────────────────────────────────────────────── */
+  .page-title    { @apply text-title font-semibold tracking-tight text-ink; }
+  .section-title { @apply text-section font-semibold text-ink; }
+  .subtle        { @apply text-sm text-muted; }
+
+  /* ── Navigation (text-only) ──────────────────────────────── */
+  .nav-link {
+    @apply relative flex items-center min-h-touch rounded-xl px-3 text-[15px] font-medium
+           text-muted transition-colors duration-150;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .nav-link:hover     { @apply bg-black/[0.04] text-ink; }
+  .nav-link-active    { @apply bg-black/[0.05] text-ink font-semibold; }
+  .nav-section        { @apply px-3 pt-4 pb-1 text-[11px] font-semibold uppercase tracking-widest text-faint; }
+
+  /* ── Bars ────────────────────────────────────────────────── */
+  .app-bar {
+    @apply sticky top-0 z-30 flex items-center gap-3 border-b border-line bg-surface/85 px-4 sm:px-6;
+    backdrop-filter: saturate(180%) blur(12px);
+    padding-top: env(safe-area-inset-top);
+  }
+  .action-bar {
+    @apply sticky bottom-0 z-20 flex items-center gap-3 border-t border-line bg-surface/90 px-4 py-3;
+    backdrop-filter: saturate(180%) blur(12px);
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
+  }
+
+  /* ── Segmented control (mode toggle / filters) ───────────── */
+  .segmented { @apply inline-flex items-center gap-1 rounded-xl bg-black/[0.05] p-1; }
+  .segmented > button { @apply min-h-[40px] rounded-lg px-4 text-sm font-medium text-muted transition-colors; }
+  .segmented > button.active,
+  .segmented > button[aria-pressed="true"] { @apply bg-surface text-ink shadow-subtle; }
+
+  /* ── Tables ──────────────────────────────────────────────── */
+  .table-wrap  { @apply w-full overflow-x-auto; }
+  table.data   { @apply w-full text-sm; border-collapse: collapse; }
+  .table-header{ @apply text-left text-xs font-semibold uppercase tracking-wide text-muted px-4 py-3; }
+  .table-cell  { @apply px-4 py-3 text-sm text-ink border-t border-line align-middle; }
+  table.data tbody tr:hover { @apply bg-black/[0.02]; }
+
+  /* ── Modal / bottom sheet ────────────────────────────────── */
+  .modal-overlay {
+    @apply fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-ink/40 p-0 sm:p-4;
+    backdrop-filter: blur(3px);
+  }
+  .modal-content {
+    @apply bg-surface w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl shadow-pop max-h-[92vh] overflow-y-auto;
+  }
+
+  /* ── Loading ─────────────────────────────────────────────── */
+  .loading-spinner    { @apply inline-block w-5 h-5 rounded-full border-2 border-line border-t-ink; animation: spin 0.8s linear infinite; }
+  .loading-spinner-sm { @apply inline-block w-4 h-4 rounded-full border-2 border-line border-t-ink; animation: spin 0.8s linear infinite; }
+  .fade-in            { animation: fadeIn 0.28s ease-out; }
+
+  /* ── Legacy tab classes remapped to the new look ─────────── */
+  .nav-tab         { @apply px-4 min-h-touch inline-flex items-center text-sm font-medium text-muted border-b-2 border-transparent transition-colors; }
+  .nav-tab:hover   { @apply text-ink; }
+  .nav-tab.active  { @apply text-ink border-accent; }
+  .nav-tab-compact { @apply min-h-[56px] inline-flex items-center justify-center text-center text-sm font-medium text-muted border-b-2 border-transparent transition-colors; }
+  .nav-tab-compact.active { @apply text-ink border-accent; }
+}
+
+@layer utilities {
+  .nums { font-variant-numeric: tabular-nums; }
+
+  .safe-pt { padding-top: env(safe-area-inset-top); }
+  .safe-pb { padding-bottom: env(safe-area-inset-bottom); }
+  .safe-px { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+
+  .min-h-dvh { min-height: 100vh; min-height: 100dvh; }
+  .h-dvh     { height: 100vh; height: 100dvh; }
+
+  .tap-clean { -webkit-tap-highlight-color: transparent; }
+  .touch-scroll { -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+}
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+@media (max-width: 767px) {
+  .modal-content { animation: slideUp 0.28s cubic-bezier(0.22, 1, 0.36, 1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+  .fade-in { animation: none; }
+}
+
+@media print {
+  .no-print { display: none !important; }
+  body { font-size: 12pt; background: #fff; }
+  .card { box-shadow: none; border: 1px solid #ddd; }
+}
