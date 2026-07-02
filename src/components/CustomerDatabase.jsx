@@ -158,7 +158,7 @@ function CustomerDatabase({ setActiveSection }) {
 
   const field = (label, key, form, setForm, opts = {}) => (
     <div>
-      <label className="field-label">{label}{opts.required && ' *'}</label>
+      <label className={`field-label ${opts.required ? 'req' : ''}`}>{label}</label>
       {opts.textarea ? (
         <textarea className="input textarea" value={form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.value })} placeholder={opts.placeholder} />
       ) : (

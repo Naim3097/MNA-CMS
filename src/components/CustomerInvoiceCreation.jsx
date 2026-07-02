@@ -749,6 +749,8 @@ function CustomerInvoiceCreation({ setActiveSection }) {
                 <button onClick={() => setViewMode('list')} className="btn-ghost btn-sm">Cancel</button>
              </div>
 
+             <p className="form-note"><span className="req-star">*</span> Required before this invoice can be saved</p>
+
              {/* Document mode toggle */}
              <div className="card">
                 <div className="field-label">Document type</div>
@@ -764,7 +766,7 @@ function CustomerInvoiceCreation({ setActiveSection }) {
              {/* Customer */}
              <div className="card">
                 <div className="flex items-center justify-between mb-3">
-                   <h3 className="section-title">Customer</h3>
+                   <h3 className="section-title req">Customer</h3>
                    {selectedCustomer && <button onClick={() => setSelectedCustomer(null)} className="btn-ghost btn-sm">Change</button>}
                 </div>
                 {selectedCustomer ? (
@@ -817,7 +819,7 @@ function CustomerInvoiceCreation({ setActiveSection }) {
              {/* Parts & Labor */}
              <div className="card">
                 <div className="flex items-center justify-between mb-3">
-                   <h3 className="section-title">Parts &amp; labor</h3>
+                   <h3 className="section-title req">Parts &amp; labor</h3>
                    <div className="flex gap-2">
                       <button onClick={() => setShowPartPicker(true)} className="btn-secondary btn-sm">Add part</button>
                       <button onClick={() => setLaborCharges([...laborCharges, { description: '', amount: 0 }])} className="btn-secondary btn-sm">Add labor</button>
@@ -826,7 +828,7 @@ function CustomerInvoiceCreation({ setActiveSection }) {
 
                 <div className="mb-4">
                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="text-sm font-medium text-ink">Parts</h4>
+                      <h4 className="subsection-title">Parts</h4>
                       <button onClick={addCustomPart} className="btn-ghost btn-sm">+ Custom line</button>
                    </div>
                    {manualParts.length ? (
@@ -856,7 +858,7 @@ function CustomerInvoiceCreation({ setActiveSection }) {
                 </div>
 
                 <div>
-                   <h4 className="text-sm font-medium text-ink mb-2">Labor charges</h4>
+                   <h4 className="subsection-title mb-2">Labor charges</h4>
                    {laborCharges.length ? (
                       <div className="space-y-2">
                          {laborCharges.map((l, i) => (

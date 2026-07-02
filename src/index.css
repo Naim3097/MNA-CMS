@@ -108,6 +108,12 @@
   .select, select.input, select.input-field { @apply pr-10; }
   .field-label { @apply block text-sm font-medium text-ink mb-1.5; }
   .field-hint  { @apply text-xs text-muted mt-1; }
+  /* Required-field cue — append a red asterisk to a label: class="field-label req" */
+  .req::after       { content: " *"; color: rgb(var(--danger)); font-weight: 700; }
+  .req-star         { @apply text-danger font-bold; }        /* standalone red * for section titles */
+  .field-optional   { @apply font-normal text-muted; }       /* "(optional)" label suffix */
+  .subsection-title { @apply text-sm font-semibold text-ink; } /* sub-headers inside a card */
+  .form-note        { @apply flex items-center gap-1.5 text-xs text-muted; } /* "* Required" legend */
 
   /* ── Surfaces ────────────────────────────────────────────── */
   .card       { @apply bg-surface border border-line rounded-2xl shadow-soft p-4 sm:p-5; }

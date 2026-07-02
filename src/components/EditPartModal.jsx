@@ -135,7 +135,7 @@ function EditPartModal({ part, onClose }) {
       <form id="edit-part-form" onSubmit={handleSubmit} className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="field-label">Product code *</label>
+            <label className="field-label req">Product code</label>
             <input
               type="text"
               value={formData.kodProduk}
@@ -147,7 +147,7 @@ function EditPartModal({ part, onClose }) {
           </div>
 
           <div>
-            <label className="field-label">Price (RM) *</label>
+            <label className="field-label req">Price (RM)</label>
             <input
               type="number"
               step="0.01"
@@ -163,7 +163,7 @@ function EditPartModal({ part, onClose }) {
         </div>
 
         <div>
-          <label className="field-label">Product name *</label>
+          <label className="field-label req">Product name</label>
           <input
             type="text"
             value={formData.namaProduk}
@@ -176,7 +176,7 @@ function EditPartModal({ part, onClose }) {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="field-label">Supplier *</label>
+            <label className="field-label req">Supplier</label>
             <input
               type="text"
               value={formData.supplier}
@@ -188,7 +188,7 @@ function EditPartModal({ part, onClose }) {
           </div>
 
           <div>
-            <label className="field-label">Stock quantity *</label>
+            <label className="field-label req">Stock quantity</label>
             <input
               type="number"
               min="0"

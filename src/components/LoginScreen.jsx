@@ -44,7 +44,7 @@ function LoginScreen({ onLoginSuccess }) {
 
         <form onSubmit={handleLogin} className="card space-y-5">
           <div>
-            <label htmlFor="email" className="field-label">Staff email</label>
+            <label htmlFor="email" className="field-label req">Staff email</label>
             <input
               id="email"
               type="email"
@@ -58,7 +58,7 @@ function LoginScreen({ onLoginSuccess }) {
           </div>
 
           <div>
-            <label htmlFor="password" className="field-label">Password</label>
+            <label htmlFor="password" className="field-label req">Password</label>
             <input
               id="password"
               type="password"

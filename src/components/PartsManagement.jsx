@@ -228,7 +228,7 @@ function PartsManagement() {
             </div>
 
             <div>
-              <label className="field-label">Quantity to add</label>
+              <label className="field-label req">Quantity to add</label>
               <input
                 className="input nums"
                 type="number"

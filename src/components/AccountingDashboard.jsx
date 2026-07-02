@@ -359,7 +359,7 @@ function AccountingDashboard() {
       >
         <form onSubmit={handlePaymentSubmit} className="space-y-4">
           <div>
-            <label className="field-label">Find invoice</label>
+            <label className="field-label req">Find invoice</label>
             <input
               className="input mb-2"
               placeholder="Search by invoice # or customer…"
@@ -394,7 +394,7 @@ function AccountingDashboard() {
           )}
 
           <div>
-            <label className="field-label">Amount (RM)</label>
+            <label className="field-label req">Amount (RM)</label>
             <input
               className="input nums"
               type="number"
